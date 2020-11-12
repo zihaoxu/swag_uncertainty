@@ -3,6 +3,8 @@ import numpy as np
 
 
 class SWAG:
+    """ Implements the SWAG paper: https://arxiv.org/pdf/1902.02476.pdf
+    """
     def __init__(self, nn, K):
         ''' Params:
                 nn (): the NN on which Swag is performed
