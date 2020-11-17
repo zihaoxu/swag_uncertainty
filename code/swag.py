@@ -143,12 +143,12 @@ class SWAG:
         first_mom, second_mom, D = self.init_storage()
 
         # Train nn for train_epoch
-        print("Beging NN model training:")
+        print("Begin NN model training:")
         for i in range(train_epoch):
             self.net_step(i)
 
         # Perform SWAG inference
-        print("\nBeging SWAG training:")
+        print("\nBegin SWAG training:")
         for i in range(swag_epoch):
             # Perform SGD for 1 step
             new_weights = self.net_step(i, return_weights=True)
@@ -165,9 +165,10 @@ class SWAG:
                 D = self.update_D(i, D, first_mom, new_weights)
         return first_mom, second_mom, D
 
-    def predict(self, X_test, first_mom, second_mom, D, S):
+     def predict(self, X_test, classes, first_mom, second_mom, D, S):
         """ Params:
                 X_test(np.ndarray): test data
+                classes(np.ndarray): list of all labels
                 first_mom(np.ndarray): the trained first mom
                 second_mom(np.ndarray): the trained second mom
                 D(np.ndarray): the trained deviation matrix
@@ -175,16 +176,44 @@ class SWAG:
             Outputs:
                 predictions: model predictions
         """
-        # Initialize storage for predictions
-        predictions = np.empty((X_test.shape[0], S))
+        # Initialize storage for probabilities
+        prob = np.zeros((len(X_test),len(classes)))
 
         # Generate weight samples
-        weight_samples = self.weight_sampler(first_mom, second_mom, D)
+        weight_samples = []
+        for i in range(S):
+            samples = swag.weight_sampler(first_mom, second_mom, D)
+            weight_samples.append(samples)
         # Recreate new net
-        for s, model_params in enumerate(weight_samples):
-            new_net = create_NN_with_weights(self.NN_class, model_params)
-            predictions[s] = new_net.predict(X_test)
+        for s, weight_param in enumerate(weight_samples):
+            model_params = params_1d_to_weights(weight_param, swag.shape_lookup, swag.len_lookup)
+            new_net = create_NN_with_weights(swag.NN_class, model_params)
+            output = new_net.forward(images)
+            softmax = torch.exp(output)
+            prob = prob + list(softmax.detach().numpy()*1/S)
+        predictions = np.argmax(prob, axis=1)
         return predictions
 
-    def weight_sampler(first_mom, second_mom, D, S):
-        pass
+    def weight_sampler(self,first_mom, second_mom, D):
+        """ Params:
+                first_mom(np.ndarray): the trained first mom
+                second_mom(np.ndarray): the trained second mom
+                D(np.ndarray): the trained deviation matrix
+            Outputs:
+                weights(theta): the weights sampled from the multinomial distribution
+        """
+        # Store theta_SWA
+        mean = torch.tensor(first_mom,requires_grad=False)
+        # Compute the sigma diagonal matrix
+        sigma_diag = torch.tensor(second_mom - first_mom**2)
+        # Draw a sample from the N(0,sigma_diag)
+        var_sample = ((1/2)*sigma_diag).sqrt()* torch.randn_like(sigma_diag, requires_grad=False)
+        # Prepare the covariance matrix D
+        D_tensor = torch.tensor(D,requires_grad=False)
+        # Draw a sample from the N(0,D)
+        D_sample = np.sqrt((1/2*self.K-1)) *D_tensor@torch.randn_like(D_tensor[0,:], requires_grad=False)
+        D_reshaped = D_sample.view_as(mean)
+        # Add mean and two variance samples together
+        weights = mean + var_sample + D_reshaped
+        return weights
+
