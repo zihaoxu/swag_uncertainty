@@ -34,6 +34,7 @@ def params_1d_to_weights(params_1d: np.ndarray,
     for shape, length in zip(shape_lookup, len_lookup):
         curr_params = torch.tensor(params_1d[pointer:pointer+length]).reshape(shape)
         model_params.append(torch.nn.Parameter(curr_params))
+        pointer = pointer + length
     return model_params
 
 
