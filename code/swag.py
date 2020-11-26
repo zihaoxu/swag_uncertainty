@@ -224,7 +224,7 @@ class SWAG:
             output = new_net.forward(X_test)
             softmax = torch.exp(output)
             prob_matrix[s] = softmax.detach().numpy()
-        
+
         # Whether return the expanded prob_matrix
         if expanded:
             return prob_matrix
