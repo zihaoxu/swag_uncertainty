@@ -191,7 +191,7 @@ class SWAG:
         weights = mean + var_sample + D_reshaped
         return weights
 
-    def predict(self, X_test, classes, first_mom, second_mom, D, S):
+    def predict(self, X_test, classes, first_mom, second_mom, D, S, expanded=True):
         """ Params:
                 X_test(np.ndarray): test data
                 classes(np.ndarray): list of all labels
@@ -203,28 +203,34 @@ class SWAG:
                 predictions: model predictions
         """
         if self.objective == 'classification':
-            return self._predict_classification(X_test, classes, first_mom, second_mom, D, S)
+            return self._predict_classification(X_test, classes, first_mom, second_mom, D, S, expanded)
         elif self.objective == 'regression':
-            return self._predict_regression(X_test, classes, first_mom, second_mom, D, S)
+            return self._predict_regression(X_test, classes, first_mom, second_mom, D, S, expanded)
 
-    def _predict_classification(self, X_test, classes, first_mom, second_mom, D, S):
+    def _predict_classification(self, X_test, classes, first_mom, second_mom, D, S, expanded):
         # Initialize storage for probabilities
-        prob = np.zeros((len(X_test), len(classes)))
+        prob_matrix = np.zeros((S, len(X_test), len(classes)))
 
         # Generate weight samples
         weight_samples = []
         for i in range(S):
             samples = self.weight_sampler(first_mom, second_mom, D)
             weight_samples.append(samples)
+
         # Recreate new net
         for s, weight_param in enumerate(weight_samples):
             model_params = params_1d_to_weights(weight_param, self.shape_lookup, self.len_lookup)
             new_net = create_NN_with_weights(self.NN_class, model_params)
             output = new_net.forward(X_test)
             softmax = torch.exp(output)
-            prob = prob + list(softmax.detach().numpy()*1/S)
-        predictions = np.argmax(prob, axis=1)
-        return predictions
+            prob_matrix[s] = softmax.detach().numpy()
+        
+        # Whether return the expanded prob_matrix
+        if expanded:
+            return prob_matrix
+        else:
+            mean_pred = np.mean(prob_matrix, axis=0)
+            return np.argmax(mean_pred, axis=1)
 
-    def _predict_regression(self, X_test, classes, first_mom, second_mom, D, S):
+    def _predict_regression(self, X_test, classes, first_mom, second_mom, D, S, expanded):
         pass
