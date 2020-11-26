@@ -53,7 +53,7 @@ class SWAG:
             # print statistics
             running_loss += loss.item()
             if i % 2000 == 1999:    # print every 2000 mini-batches
-                print('[%d, %5d] loss: %.3f' %
+                print('[Epoch: %d, Iteration: %5d] Training Loss: %.4f' %
                       (epoch + 1, i + 1, running_loss / 2000))
                 running_loss = 0.0
 
@@ -103,6 +103,7 @@ class SWAG:
         return D_new
 
     def compile(self,
+                objective: str,
                 lr: float,
                 momentum: float,
                 optimizer: torch.optim.Optimizer,
@@ -111,6 +112,9 @@ class SWAG:
                 swa_scheduler):
         ''' Compiles the model
         '''
+        if objective not in ['regression', 'classification']:
+            raise ValueError("objective must be one of 'regression' or 'classification'.")
+        self.objective = objective
         self.optimizer = optimizer(self.net.parameters(), lr, momentum)
         self.loss_fn = loss_fn
         self.train_scheduler = train_scheduler(self.optimizer, T_max=100)
@@ -137,7 +141,7 @@ class SWAG:
         self.train_loader = train_loader
 
         if (swag_epoch // c) < self.K:
-            raise ValueError(f"swag_epoch//c={swag_epoch//c} needs to be at least K={K}")
+            raise ValueError(f"swag_epoch//c={swag_epoch//c} needs to be at least K={self.K}")
 
         # Init storage
         first_mom, second_mom, D = self.init_storage()
@@ -159,13 +163,35 @@ class SWAG:
                                                         first_mom,
                                                         second_mom,
                                                         new_weights)
-
             # Update D matrix
             if i % c == 0:
                 D = self.update_D(i, D, first_mom, new_weights)
         return first_mom, second_mom, D
 
-     def predict(self, X_test, classes, first_mom, second_mom, D, S):
+    def weight_sampler(self, first_mom, second_mom, D):
+        """ Params:
+                first_mom(np.ndarray): the trained first mom
+                second_mom(np.ndarray): the trained second mom
+                D(np.ndarray): the trained deviation matrix
+            Outputs:
+                weights(theta): the weights sampled from the multinomial distribution
+        """
+        # Store theta_SWA
+        mean = torch.tensor(first_mom, requires_grad=False)
+        # Compute the sigma diagonal matrix
+        sigma_diag = torch.tensor(second_mom - first_mom**2)
+        # Draw a sample from the N(0,sigma_diag)
+        var_sample = ((1/2)*sigma_diag).sqrt() * torch.randn_like(sigma_diag, requires_grad=False)
+        # Prepare the covariance matrix D
+        D_tensor = torch.tensor(D, requires_grad=False)
+        # Draw a sample from the N(0,D)
+        D_sample = np.sqrt((1/2*self.K-1)) * D_tensor @ torch.randn_like(D_tensor[0, :], requires_grad=False)
+        D_reshaped = D_sample.view_as(mean)
+        # Add mean and two variance samples together
+        weights = mean + var_sample + D_reshaped
+        return weights
+
+    def predict(self, X_test, classes, first_mom, second_mom, D, S):
         """ Params:
                 X_test(np.ndarray): test data
                 classes(np.ndarray): list of all labels
@@ -176,44 +202,29 @@ class SWAG:
             Outputs:
                 predictions: model predictions
         """
+        if self.objective == 'classification':
+            return self._predict_classification(X_test, classes, first_mom, second_mom, D, S)
+        elif self.objective == 'regression':
+            return self._predict_regression(X_test, classes, first_mom, second_mom, D, S)
+
+    def _predict_classification(self, X_test, classes, first_mom, second_mom, D, S):
         # Initialize storage for probabilities
-        prob = np.zeros((len(X_test),len(classes)))
+        prob = np.zeros((len(X_test), len(classes)))
 
         # Generate weight samples
         weight_samples = []
         for i in range(S):
-            samples = swag.weight_sampler(first_mom, second_mom, D)
+            samples = self.weight_sampler(first_mom, second_mom, D)
             weight_samples.append(samples)
         # Recreate new net
         for s, weight_param in enumerate(weight_samples):
-            model_params = params_1d_to_weights(weight_param, swag.shape_lookup, swag.len_lookup)
-            new_net = create_NN_with_weights(swag.NN_class, model_params)
-            output = new_net.forward(images)
+            model_params = params_1d_to_weights(weight_param, self.shape_lookup, self.len_lookup)
+            new_net = create_NN_with_weights(self.NN_class, model_params)
+            output = new_net.forward(X_test)
             softmax = torch.exp(output)
             prob = prob + list(softmax.detach().numpy()*1/S)
         predictions = np.argmax(prob, axis=1)
         return predictions
 
-    def weight_sampler(self,first_mom, second_mom, D):
-        """ Params:
-                first_mom(np.ndarray): the trained first mom
-                second_mom(np.ndarray): the trained second mom
-                D(np.ndarray): the trained deviation matrix
-            Outputs:
-                weights(theta): the weights sampled from the multinomial distribution
-        """
-        # Store theta_SWA
-        mean = torch.tensor(first_mom,requires_grad=False)
-        # Compute the sigma diagonal matrix
-        sigma_diag = torch.tensor(second_mom - first_mom**2)
-        # Draw a sample from the N(0,sigma_diag)
-        var_sample = ((1/2)*sigma_diag).sqrt()* torch.randn_like(sigma_diag, requires_grad=False)
-        # Prepare the covariance matrix D
-        D_tensor = torch.tensor(D,requires_grad=False)
-        # Draw a sample from the N(0,D)
-        D_sample = np.sqrt((1/2*self.K-1)) *D_tensor@torch.randn_like(D_tensor[0,:], requires_grad=False)
-        D_reshaped = D_sample.view_as(mean)
-        # Add mean and two variance samples together
-        weights = mean + var_sample + D_reshaped
-        return weights
-
+    def _predict_regression(self, X_test, classes, first_mom, second_mom, D, S):
+        pass
