@@ -29,6 +29,7 @@ class SWAG:
 
     def net_step(self,
                  epoch: int,
+                 log_freq: int,
                  train_mode: bool = False,
                  return_weights: bool = False):
         if not self.optimizer:
@@ -38,6 +39,8 @@ class SWAG:
         running_loss = 0.0
         for i, data in enumerate(self.train_loader, 0):
             X_train, y_train = data
+            if len(y_train.shape) > 1:
+                y_train = y_train.view(-1)
             self.optimizer.zero_grad()
             loss = self.loss_fn(self.net(X_train), y_train)
             loss.backward()
@@ -52,9 +55,9 @@ class SWAG:
 
             # print statistics
             running_loss += loss.item()
-            if i % 2000 == 1999:    # print every 2000 mini-batches
+            if i % log_freq == log_freq-1:    # print every 2000 mini-batches
                 print('[Epoch: %d, Iteration: %5d] Training Loss: %.4f' %
-                      (epoch + 1, i + 1, running_loss / 2000))
+                      (epoch + 1, i + 1, running_loss / log_freq))
                 running_loss = 0.0
 
         # If return_weights
@@ -125,7 +128,8 @@ class SWAG:
             train_loader,
             train_epoch: int,
             swag_epoch: int,
-            c: int = 1) -> (np.array, np.array, np.ndarray):
+            c: int = 1,
+            log_freq: int = 2000) -> (np.array, np.array, np.ndarray):
         ''' Main func that fits the swag model
             Params:
                 train_loader()
@@ -149,13 +153,13 @@ class SWAG:
         # Train nn for train_epoch
         print("Begin NN model training:")
         for i in range(train_epoch):
-            self.net_step(i)
+            self.net_step(i, log_freq)
 
         # Perform SWAG inference
         print("\nBegin SWAG training:")
         for i in range(swag_epoch):
             # Perform SGD for 1 step
-            new_weights = self.net_step(i, return_weights=True)
+            new_weights = self.net_step(i, log_freq, return_weights=True)
 
             # Update the first and second moms
             n_model = i // c
@@ -191,7 +195,7 @@ class SWAG:
         weights = mean + var_sample + D_reshaped
         return weights
 
-    def predict(self, X_test, classes, first_mom, second_mom, D, S, expanded=True):
+    def predict(self, X_test, classes, first_mom, second_mom, D, S, expanded=False):
         """ Params:
                 X_test(np.ndarray): test data
                 classes(np.ndarray): list of all labels
@@ -222,8 +226,7 @@ class SWAG:
             model_params = params_1d_to_weights(weight_param, self.shape_lookup, self.len_lookup)
             new_net = create_NN_with_weights(self.NN_class, model_params)
             output = new_net.forward(X_test)
-            softmax = torch.exp(output)
-            prob_matrix[s] = softmax.detach().numpy()
+            prob_matrix[s] = output.detach().numpy()
 
         # Whether return the expanded prob_matrix
         if expanded:
@@ -232,5 +235,5 @@ class SWAG:
             mean_pred = np.mean(prob_matrix, axis=0)
             return np.argmax(mean_pred, axis=1)
 
-    def _predict_regression(self, X_test, classes, first_mom, second_mom, D, S, expanded):
+    def _predict_regression(self, X_test, first_mom, second_mom, D, S, expanded):
         pass
