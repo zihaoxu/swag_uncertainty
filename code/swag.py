@@ -6,15 +6,15 @@ from util import model_param_to_1D, params_1d_to_weights, create_NN_with_weights
 class SWAG:
     """ Implements the SWAG paper: https://arxiv.org/pdf/1902.02476.pdf
     """
-    def __init__(self, NN_class, K):
+    def __init__(self, NN_class, K, **kwargs):
         ''' Params:
-                nn (): the NN on which Swag is performed
+                nn (nn.Module): the NN on which Swag is performed
                 K (int): maximum number of columns in deviation matrix
         '''
 
         # Neural Network related params
         self.NN_class = NN_class
-        self.net = NN_class()
+        self.net = NN_class(**kwargs)
         self.params_1d, self.shape_lookup, self.len_lookup = model_param_to_1D(self.net)
         self.weigt_D = len(self.params_1d)
 
@@ -30,8 +30,9 @@ class SWAG:
     def net_step(self,
                  epoch: int,
                  log_freq: int,
+                 verbose: bool,
                  train_mode: bool = False,
-                 return_weights: bool = False):
+                 return_weights: bool = False,):
         if not self.optimizer:
             raise RuntimeError("Please compile the model before training.")
 
@@ -55,7 +56,7 @@ class SWAG:
 
             # print statistics
             running_loss += loss.item()
-            if i % log_freq == log_freq-1:    # print every 2000 mini-batches
+            if verbose and i % log_freq == log_freq-1:
                 print('[Epoch: %d, \tIteration: %5d] \tTraining Loss: %.4f' %
                       (epoch + 1, i + 1, running_loss / log_freq))
                 running_loss = 0.0
@@ -129,7 +130,8 @@ class SWAG:
             train_epoch: int,
             swag_epoch: int,
             c: int = 1,
-            log_freq: int = 2000) -> (np.array, np.array, np.ndarray):
+            log_freq: int = 2000,
+            verbose: bool = True) -> (np.array, np.array, np.ndarray):
         ''' Main func that fits the swag model
             Params:
                 train_loader()
@@ -151,15 +153,15 @@ class SWAG:
         first_mom, second_mom, D = self.init_storage()
 
         # Train nn for train_epoch
-        print("Begin NN model training:")
+        print("Begin NN model training...")
         for i in range(train_epoch):
-            self.net_step(i, log_freq)
+            self.net_step(i, log_freq, verbose)
 
         # Perform SWAG inference
-        print("\nBegin SWAG training:")
+        print("\nBegin SWAG training...")
         for i in range(swag_epoch):
             # Perform SGD for 1 step
-            new_weights = self.net_step(i, log_freq, return_weights=True)
+            new_weights = self.net_step(i, log_freq, verbose, return_weights=True)
 
             # Update the first and second moms
             n_model = i // c

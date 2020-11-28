@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -56,15 +57,43 @@ class ConvNN(nn.Module):
         return x
 
 
-class Classification_NN(nn.Module):
+class Classification_relu(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(2, 4)
-        self.fc2 = nn.Linear(4, 2)
-        self.fc3 = nn.Linear(2, 2)
+        self.fc2 = nn.Linear(4, 4)
+        self.fc3 = nn.Linear(4, 2)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        x = F.softmax(self.fc3(x), dim=1)
+        return x
+
+
+class Classification_sigmoid(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(2, 4)
+        self.fc2 = nn.Linear(4, 4)
+        self.fc3 = nn.Linear(4, 2)
+
+    def forward(self, x):
+        x = torch.sigmoid(self.fc1(x))
+        x = torch.sigmoid(self.fc2(x))
+        x = F.softmax(self.fc3(x), dim=1)
+        return x
+
+
+class Classification_tanh(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(2, 4)
+        self.fc2 = nn.Linear(4, 4)
+        self.fc3 = nn.Linear(4, 2)
+
+    def forward(self, x):
+        x = torch.tanh(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
         x = F.softmax(self.fc3(x), dim=1)
         return x
