@@ -7,7 +7,7 @@ class ClassificationDataSet(Dataset):
     def __init__(self, mode, n_samples=1000):
         self.mode = mode
         self.n_samples = n_samples
-        self.test_points = [(-1, -1.5), (2, 1.5), (-5, -5), (5, 5), (-5, 3.5),
+        self.test_points = [(-1, -1.5), (1, 1), (-5, -5), (5, 5), (-5, 3.5),
                             (5, -3.5), (-1, 1), (1, -1)]
         if mode == 'train':
             self.X, self.Y = self.get_samples()

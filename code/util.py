@@ -48,7 +48,8 @@ def create_NN_with_weights(NN_class, model_params):
     return net
 
 
-def plot_decision_boundary(swag, x, y, ax, poly_degree=1, test_points=None, shaded=True):
+def plot_decision_boundary(swag, x, y, ax, xlim, n_models,
+                           poly_degree=1, test_points=None, shaded=True):
     '''
     plot_decision_boundary plots the training data and the decision boundary of the classifier.
     input:
@@ -68,7 +69,7 @@ def plot_decision_boundary(swag, x, y, ax, poly_degree=1, test_points=None, shad
     ax.scatter(x[y == 0, 0], x[y == 0, 1], alpha=0.2, c='blue', label='class 0')
 
     # Create mesh
-    interval = np.arange(-6, 6, 0.1)
+    interval = np.arange(-xlim, xlim, 0.1)
     n = np.size(interval)
     x1, x2 = np.meshgrid(interval, interval)
     x1 = x1.reshape(-1, 1)
@@ -80,11 +81,11 @@ def plot_decision_boundary(swag, x, y, ax, poly_degree=1, test_points=None, shad
         polynomial_features = PolynomialFeatures(degree=poly_degree, include_bias=False)
         xx = polynomial_features.fit_transform(xx)
 
-    alpha_line = 0.1
+    alpha_line = 0.2
     linewidths = 0.1
     i = 0
 
-    for _ in range(100):
+    for _ in range(n_models):
         yy = swag.predict(torch.Tensor(xx), [0, 1], S=1, expanded=False)
         yy = yy.reshape((n, n))
 
@@ -92,7 +93,7 @@ def plot_decision_boundary(swag, x, y, ax, poly_degree=1, test_points=None, shad
         x1 = x1.reshape(n, n)
         x2 = x2.reshape(n, n)
         if shaded:
-            ax.contourf(x1, x2, yy, alpha=0.1 * 1. / (i + 1)**2, cmap='bwr')
+            ax.contourf(x1, x2, yy, alpha=0.1 / (i + 1)**2, cmap='bwr')
         ax.contour(x1, x2, yy, colors='black', linewidths=linewidths, alpha=alpha_line)
 
         i += 1
@@ -105,8 +106,8 @@ def plot_decision_boundary(swag, x, y, ax, poly_degree=1, test_points=None, shad
             else:
                 ax.scatter(pt[0], pt[1], alpha=1., s=50, color='black')
 
-    ax.set_xlim((-5.5, 5.5))
-    ax.set_ylim((-5.5, 5.5))
+    ax.set_xlim((-xlim+0.5, xlim-0.5))
+    ax.set_ylim((-xlim+0.5, xlim-0.5))
     ax.set_xlabel('x_1')
     ax.set_ylabel('x_2')
     ax.legend(loc='best')

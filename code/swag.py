@@ -32,7 +32,7 @@ class SWAG:
                  log_freq: int,
                  verbose: bool,
                  train_mode: bool = False,
-                 return_weights: bool = False,):
+                 return_weights: bool = False):
         if not self.optimizer:
             raise RuntimeError("Please compile the model before training.")
 
@@ -47,19 +47,16 @@ class SWAG:
             loss.backward()
             self.optimizer.step()
 
-            # Training mode
-            if train_mode:
-                self.train_scheduler.step()
-            # Swag mode
-            else:
-                self.swa_scheduler.step()
-
             # print statistics
             running_loss += loss.item()
             if verbose and i % log_freq == log_freq-1:
                 print('[Epoch: %d, \tIteration: %5d] \tTraining Loss: %.4f' %
                       (epoch + 1, i + 1, running_loss / log_freq))
                 running_loss = 0.0
+
+        # update swa_scheduler in Swag mode
+        if not train_mode:
+            self.swa_scheduler.step()
 
         # If return_weights
         if return_weights:
@@ -109,10 +106,10 @@ class SWAG:
     def compile(self,
                 objective: str,
                 lr: float,
+                swa_const_lr: float,
                 momentum: float,
                 optimizer: torch.optim.Optimizer,
                 loss_fn: torch.nn.modules.loss._Loss,
-                train_scheduler,
                 swa_scheduler):
         ''' Compiles the model
         '''
@@ -121,9 +118,8 @@ class SWAG:
         self.objective = objective
         self.optimizer = optimizer(self.net.parameters(), lr, momentum)
         self.loss_fn = loss_fn
-        self.train_scheduler = train_scheduler(self.optimizer, step_size=20, gamma=0.1)
-        const_lr = lambda x: 1
-        self.swa_scheduler = swa_scheduler(self.optimizer, lr_lambda=const_lr)
+        self.swa_const_lr = lambda x: swa_const_lr
+        self.swa_scheduler_cls = swa_scheduler
 
     def fit(self,
             train_loader,
@@ -155,13 +151,19 @@ class SWAG:
         # Train nn for train_epoch
         print("Begin NN model training...")
         for i in range(train_epoch):
-            self.net_step(i, log_freq, verbose)
+            self.net_step(i, log_freq, verbose, train_mode=True)
 
         # Perform SWAG inference
         print("\nBegin SWAG training...")
         for i in range(swag_epoch):
+            # Activate scheduler
+            self.swa_scheduler = self.swa_scheduler_cls(self.optimizer,
+                                                        lr_lambda=self.swa_const_lr)
+
             # Perform SGD for 1 step
-            new_weights = self.net_step(i, log_freq, verbose, return_weights=True)
+            new_weights = self.net_step(i, log_freq, verbose,
+                                        return_weights=True,
+                                        train_mode=False)
 
             # Update the first and second moms
             n_model = i // c
