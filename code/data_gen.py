@@ -10,8 +10,8 @@ def get_classification_data(samples=100):
     x = np.vstack((class_0, class_1))
     y = np.array([0] * samples + [1] * samples)
     # Define test data points
-    test_points = [(-5, -5), (-5, 3.5), (5, 5), (5, -3.5), (-1, 1), (-1, -1.5),
-                   (1, 1.5), (1, 0)]
+    test_points = [(-1, -1.5), (1, 1.5), (-5, -5), (5, 5), (-5, 3.5),
+                   (5, -3.5), (-1, 1), (1, -0.2)]
     return (x, y), test_points
 
 
@@ -19,8 +19,8 @@ class ClassificationDataSet(Dataset):
     def __init__(self, mode, n_samples=1000):
         self.mode = mode
         self.n_samples = n_samples
-        self.test_points = [(-5, -5), (-5, 3.5), (5, 5), (5, -3.5), (-1, 1),
-                            (-1, -1.5), (1, 1.5), (1, 0)]
+        self.test_points = [(-1, -1.5), (1, 1.5), (-5, -5), (5, 5), (-5, 3.5),
+                            (5, -3.5), (-1, 1), (1, -0.2)]
         if mode == 'train':
             self.X, self.Y = self.get_samples()
             print(self.X.shape, self.Y.shape)

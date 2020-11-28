@@ -56,7 +56,7 @@ class SWAG:
             # print statistics
             running_loss += loss.item()
             if i % log_freq == log_freq-1:    # print every 2000 mini-batches
-                print('[Epoch: %d, Iteration: %5d] Training Loss: %.4f' %
+                print('[Epoch: %d, \tIteration: %5d] \tTraining Loss: %.4f' %
                       (epoch + 1, i + 1, running_loss / log_freq))
                 running_loss = 0.0
 
@@ -120,7 +120,7 @@ class SWAG:
         self.objective = objective
         self.optimizer = optimizer(self.net.parameters(), lr, momentum)
         self.loss_fn = loss_fn
-        self.train_scheduler = train_scheduler(self.optimizer, T_max=100)
+        self.train_scheduler = train_scheduler(self.optimizer, step_size=20, gamma=0.1)
         const_lr = lambda x: 1
         self.swa_scheduler = swa_scheduler(self.optimizer, lr_lambda=const_lr)
 
@@ -170,24 +170,25 @@ class SWAG:
             # Update D matrix
             if i % c == 0:
                 D = self.update_D(i, D, first_mom, new_weights)
+
+        # Save the learn moments and D
+        self.first_mom = first_mom
+        self.second_mom = second_mom
+        self.D = D
         return first_mom, second_mom, D
 
-    def weight_sampler(self, first_mom, second_mom, D):
-        """ Params:
-                first_mom(np.ndarray): the trained first mom
-                second_mom(np.ndarray): the trained second mom
-                D(np.ndarray): the trained deviation matrix
-            Outputs:
+    def weight_sampler(self):
+        """ Outputs:
                 weights(theta): the weights sampled from the multinomial distribution
         """
         # Store theta_SWA
-        mean = torch.tensor(first_mom, requires_grad=False)
+        mean = torch.tensor(self.first_mom, requires_grad=False)
         # Compute the sigma diagonal matrix
-        sigma_diag = torch.tensor(second_mom - first_mom**2)
+        sigma_diag = torch.tensor(self.second_mom - self.first_mom**2)
         # Draw a sample from the N(0,sigma_diag)
         var_sample = ((1/2)*sigma_diag).sqrt() * torch.randn_like(sigma_diag, requires_grad=False)
         # Prepare the covariance matrix D
-        D_tensor = torch.tensor(D, requires_grad=False)
+        D_tensor = torch.tensor(self.D, requires_grad=False)
         # Draw a sample from the N(0,D)
         D_sample = np.sqrt((1/2*self.K-1)) * D_tensor @ torch.randn_like(D_tensor[0, :], requires_grad=False)
         D_reshaped = D_sample.view_as(mean)
@@ -195,7 +196,7 @@ class SWAG:
         weights = mean + var_sample + D_reshaped
         return weights
 
-    def predict(self, X_test, classes, first_mom, second_mom, D, S, expanded=False):
+    def predict(self, X_test, classes, S, expanded=False):
         """ Params:
                 X_test(np.ndarray): test data
                 classes(np.ndarray): list of all labels
@@ -207,18 +208,18 @@ class SWAG:
                 predictions: model predictions
         """
         if self.objective == 'classification':
-            return self._predict_classification(X_test, classes, first_mom, second_mom, D, S, expanded)
+            return self._predict_classification(X_test, classes, S, expanded)
         elif self.objective == 'regression':
-            return self._predict_regression(X_test, classes, first_mom, second_mom, D, S, expanded)
+            return self._predict_regression(X_test, classes, S, expanded)
 
-    def _predict_classification(self, X_test, classes, first_mom, second_mom, D, S, expanded):
+    def _predict_classification(self, X_test, classes, S, expanded):
         # Initialize storage for probabilities
         prob_matrix = np.zeros((S, len(X_test), len(classes)))
 
         # Generate weight samples
         weight_samples = []
         for i in range(S):
-            samples = self.weight_sampler(first_mom, second_mom, D)
+            samples = self.weight_sampler()
             weight_samples.append(samples)
 
         # Recreate new net
