@@ -6,15 +6,15 @@ from util import model_param_to_1D, params_1d_to_weights, create_NN_with_weights
 class SWAG:
     """ Implements the SWAG paper: https://arxiv.org/pdf/1902.02476.pdf
     """
-    def __init__(self, NN_class, K):
+    def __init__(self, NN_class, K, **kwargs):
         ''' Params:
-                nn (): the NN on which Swag is performed
+                nn (nn.Module): the NN on which Swag is performed
                 K (int): maximum number of columns in deviation matrix
         '''
 
         # Neural Network related params
         self.NN_class = NN_class
-        self.net = NN_class()
+        self.net = NN_class(**kwargs)
         self.params_1d, self.shape_lookup, self.len_lookup = model_param_to_1D(self.net)
         self.weigt_D = len(self.params_1d)
 
@@ -30,6 +30,7 @@ class SWAG:
     def net_step(self,
                  epoch: int,
                  log_freq: int,
+                 verbose: bool,
                  train_mode: bool = False,
                  return_weights: bool = False):
         if not self.optimizer:
@@ -46,19 +47,16 @@ class SWAG:
             loss.backward()
             self.optimizer.step()
 
-            # Training mode
-            if train_mode:
-                self.train_scheduler.step()
-            # Swag mode
-            else:
-                self.swa_scheduler.step()
-
             # print statistics
             running_loss += loss.item()
-            if i % log_freq == log_freq-1:    # print every 2000 mini-batches
-                print('[Epoch: %d, Iteration: %5d] Training Loss: %.4f' %
+            if verbose and i % log_freq == log_freq-1:
+                print('[Epoch: %d, \tIteration: %5d] \tTraining Loss: %.4f' %
                       (epoch + 1, i + 1, running_loss / log_freq))
                 running_loss = 0.0
+
+        # update swa_scheduler in Swag mode
+        if not train_mode:
+            self.swa_scheduler.step()
 
         # If return_weights
         if return_weights:
@@ -108,10 +106,10 @@ class SWAG:
     def compile(self,
                 objective: str,
                 lr: float,
+                swa_const_lr: float,
                 momentum: float,
                 optimizer: torch.optim.Optimizer,
                 loss_fn: torch.nn.modules.loss._Loss,
-                train_scheduler,
                 swa_scheduler):
         ''' Compiles the model
         '''
@@ -120,16 +118,16 @@ class SWAG:
         self.objective = objective
         self.optimizer = optimizer(self.net.parameters(), lr, momentum)
         self.loss_fn = loss_fn
-        self.train_scheduler = train_scheduler(self.optimizer, T_max=100)
-        const_lr = lambda x: 1
-        self.swa_scheduler = swa_scheduler(self.optimizer, lr_lambda=const_lr)
+        self.swa_const_lr = lambda x: swa_const_lr
+        self.swa_scheduler_cls = swa_scheduler
 
     def fit(self,
             train_loader,
             train_epoch: int,
             swag_epoch: int,
             c: int = 1,
-            log_freq: int = 2000) -> (np.array, np.array, np.ndarray):
+            log_freq: int = 2000,
+            verbose: bool = True) -> (np.array, np.array, np.ndarray):
         ''' Main func that fits the swag model
             Params:
                 train_loader()
@@ -151,15 +149,21 @@ class SWAG:
         first_mom, second_mom, D = self.init_storage()
 
         # Train nn for train_epoch
-        print("Begin NN model training:")
+        print("Begin NN model training...")
         for i in range(train_epoch):
-            self.net_step(i, log_freq)
+            self.net_step(i, log_freq, verbose, train_mode=True)
 
         # Perform SWAG inference
-        print("\nBegin SWAG training:")
+        print("\nBegin SWAG training...")
         for i in range(swag_epoch):
+            # Activate scheduler
+            self.swa_scheduler = self.swa_scheduler_cls(self.optimizer,
+                                                        lr_lambda=self.swa_const_lr)
+
             # Perform SGD for 1 step
-            new_weights = self.net_step(i, log_freq, return_weights=True)
+            new_weights = self.net_step(i, log_freq, verbose,
+                                        return_weights=True,
+                                        train_mode=False)
 
             # Update the first and second moms
             n_model = i // c
@@ -170,24 +174,25 @@ class SWAG:
             # Update D matrix
             if i % c == 0:
                 D = self.update_D(i, D, first_mom, new_weights)
+
+        # Save the learn moments and D
+        self.first_mom = first_mom
+        self.second_mom = second_mom
+        self.D = D
         return first_mom, second_mom, D
 
-    def weight_sampler(self, first_mom, second_mom, D):
-        """ Params:
-                first_mom(np.ndarray): the trained first mom
-                second_mom(np.ndarray): the trained second mom
-                D(np.ndarray): the trained deviation matrix
-            Outputs:
+    def weight_sampler(self):
+        """ Outputs:
                 weights(theta): the weights sampled from the multinomial distribution
         """
         # Store theta_SWA
-        mean = torch.tensor(first_mom, requires_grad=False)
+        mean = torch.tensor(self.first_mom, requires_grad=False)
         # Compute the sigma diagonal matrix
-        sigma_diag = torch.tensor(second_mom - first_mom**2)
+        sigma_diag = torch.tensor(self.second_mom - self.first_mom**2)
         # Draw a sample from the N(0,sigma_diag)
         var_sample = ((1/2)*sigma_diag).sqrt() * torch.randn_like(sigma_diag, requires_grad=False)
         # Prepare the covariance matrix D
-        D_tensor = torch.tensor(D, requires_grad=False)
+        D_tensor = torch.tensor(self.D, requires_grad=False)
         # Draw a sample from the N(0,D)
         D_sample = np.sqrt((1/2*self.K-1)) * D_tensor @ torch.randn_like(D_tensor[0, :], requires_grad=False)
         D_reshaped = D_sample.view_as(mean)
@@ -195,7 +200,7 @@ class SWAG:
         weights = mean + var_sample + D_reshaped
         return weights
 
-    def predict(self, X_test, classes, first_mom, second_mom, D, S, expanded=False):
+    def predict(self, X_test, classes, S, expanded=False):
         """ Params:
                 X_test(np.ndarray): test data
                 classes(np.ndarray): list of all labels
@@ -207,18 +212,18 @@ class SWAG:
                 predictions: model predictions
         """
         if self.objective == 'classification':
-            return self._predict_classification(X_test, classes, first_mom, second_mom, D, S, expanded)
+            return self._predict_classification(X_test, classes, S, expanded)
         elif self.objective == 'regression':
-            return self._predict_regression(X_test, classes, first_mom, second_mom, D, S, expanded)
+            return self._predict_regression(X_test, classes, S, expanded)
 
-    def _predict_classification(self, X_test, classes, first_mom, second_mom, D, S, expanded):
+    def _predict_classification(self, X_test, classes, S, expanded):
         # Initialize storage for probabilities
         prob_matrix = np.zeros((S, len(X_test), len(classes)))
 
         # Generate weight samples
         weight_samples = []
         for i in range(S):
-            samples = self.weight_sampler(first_mom, second_mom, D)
+            samples = self.weight_sampler()
             weight_samples.append(samples)
 
         # Recreate new net
