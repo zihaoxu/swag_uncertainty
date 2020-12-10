@@ -6,7 +6,7 @@ from util import model_param_to_1D, params_1d_to_weights, create_NN_with_weights
 class SWAG:
     """ Implements the SWAG paper: https://arxiv.org/pdf/1902.02476.pdf
     """
-    def __init__(self, NN_class, K, **kwargs):
+    def __init__(self, NN_class, K, pretrained = False, NNModel = None, **kwargs):
         ''' Params:
                 nn (nn.Module): the NN on which Swag is performed
                 K (int): maximum number of columns in deviation matrix
@@ -14,7 +14,10 @@ class SWAG:
 
         # Neural Network related params
         self.NN_class = NN_class
-        self.net = NN_class(**kwargs)
+        if pretrained == False:
+            self.net = NN_class(**kwargs)
+        else:
+            self.net = NNModel
         self.params_1d, self.shape_lookup, self.len_lookup = model_param_to_1D(self.net)
         self.weigt_D = len(self.params_1d)
 
@@ -127,17 +130,21 @@ class SWAG:
             swag_epoch: int,
             c: int = 1,
             log_freq: int = 2000,
-            verbose: bool = True) -> (np.array, np.array, np.ndarray):
+            verbose: bool = True,
+            pretrained: bool = False
+           ) -> (np.array, np.array, np.ndarray):
         ''' Main func that fits the swag model
             Params:
                 train_loader()
                 train_epoch(int): the number of steps to train NN
                 swag_epoch(int): number of steps to perform swag
                 c(int): moment update frequency, thinning factor
+                pretrained: If initialize with pretrained-weights
             Output:
                 first_mom(np.ndarray): the trained first mom
                 second_mom(np.ndarray): the trained second mom
                 D(np.ndarray): the trained deviation matrix
+
         '''
         # Save train_loader
         self.train_loader = train_loader
@@ -147,6 +154,10 @@ class SWAG:
 
         # Init storage
         first_mom, second_mom, D = self.init_storage()
+        
+        if pretrained == True:
+            first_mom = self.params_1d
+            second_mom = self.params_1d**2
 
         # Train nn for train_epoch
         print("Begin NN model training...")
