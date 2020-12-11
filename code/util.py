@@ -112,3 +112,19 @@ def plot_decision_boundary(swag, x, y, ax, xlim, n_models,
     ax.set_ylabel('x_2')
     ax.legend(loc='best')
     return ax
+
+
+def uncertainty_measurement(X_test, expand_pred):
+    ''' Measures model uncertainty in as the variance in SWAG model predictions
+        Params:
+            X_test: test points
+            expand_pred: swag prediction in expanded form
+    '''
+    var_list = []
+    for i in range(len(X_test)):
+        preds_i = np.argmax(expand_pred[:, i], axis=1)
+        var_list.append(np.var(preds_i))
+
+    print("\nBegin uncertainty assessment...")
+    for x, var in zip(X_test, var_list):
+        print(f"Test point: {x} \tVariance in prediction: {var:.4f}")
