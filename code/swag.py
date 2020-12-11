@@ -6,7 +6,7 @@ from util import model_param_to_1D, params_1d_to_weights, create_NN_with_weights
 class SWAG:
     """ Implements the SWAG paper: https://arxiv.org/pdf/1902.02476.pdf
     """
-    def __init__(self, NN_class, K, pretrained=False, NNModel=None):
+    def __init__(self, NN_class, K, pretrained=False, NNModel=None, **kwargs):
         ''' Params:
                 nn (nn.Module): the NN on which Swag is performed
                 K (int): maximum number of columns in deviation matrix
@@ -15,7 +15,7 @@ class SWAG:
         # Neural Network related params
         self.NN_class = NN_class
         if not pretrained:
-            self.net = NN_class()
+            self.net = NN_class(**kwargs)
         else:
             self.net = NNModel
         self.params_1d, self.shape_lookup, self.len_lookup = model_param_to_1D(self.net)
