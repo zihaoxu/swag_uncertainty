@@ -112,6 +112,19 @@ class Classification_relu_8(nn.Module):
         x = F.softmax(self.fc3(x), dim=1)
         return x
     
+class Regression_linear(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(1, 5)
+        self.fc2 = nn.Linear(5, 5)
+        self.fc3 = nn.Linear(5, 1)
+
+    def forward(self, x):
+        x = F.tanh(self.fc1(x))
+        x = F.tanh(self.fc2(x))
+        x = self.fc3(x)
+        return x
+    
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
