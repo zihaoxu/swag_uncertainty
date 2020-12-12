@@ -65,3 +65,39 @@ class TwoMoons(Dataset):
         else:
             inpt = torch.Tensor(self.test_points[idx])
             return inpt
+        
+class RegressionDataSet(Dataset):
+    def __init__(self, mode, gap, n_samples=20, noise_variance=0.3):
+        self.mode = mode
+        self.n_samples = n_samples
+        self.noise_variance = noise_variance
+        self.X, self.Y, self.X_test = self.get_samples(gap)
+
+    def get_samples(self, gap = True):
+        if gap:
+            x_train = np.hstack((np.linspace(-1, -0.5, self.n_samples), np.linspace(0.5, 1, self.n_samples)))
+            f = lambda x: 3 * x**3
+            y_train = f(x_train) + np.random.normal(0, self.noise_variance**0.5, 2 * self.n_samples)
+        else:
+            x_train = np.linspace(-1, 1, 2*100)
+            f = lambda x: -10*x**2 + 3 if (-0.5<=x) & (x<=0.5) else 3 * x**3 
+            y_train = [f(i) for i in x_train] + np.random.normal(0, 0.3**0.5, 2 * 100)
+        x_test = np.array(list(set(list(np.hstack((np.linspace(-1, 1, 200), x_train))))))
+        x_test = np.sort(x_test)
+        return x_train, y_train, x_test
+
+    def __len__(self):
+        if self.mode == 'train':
+            return len(self.X)
+        else:
+            return len(self.X_test)
+
+    def __getitem__(self, idx):
+        if self.mode == 'train':
+            inpt = torch.as_tensor([self.X[idx]])
+            oupt = torch.as_tensor([self.Y[idx]])
+            return inpt, oupt
+        else:
+            inpt = torch.as_tensor([self.X_test[idx]])
+            return inpt
+

@@ -251,5 +251,22 @@ class SWAG:
             mean_pred = np.mean(prob_matrix, axis=0)
             return np.argmax(mean_pred, axis=1)
 
-    def _predict_regression(self, X_test, first_mom, second_mom, D, S, expanded):
-        pass
+    def _predict_regression(self, X_test, classes, S, expanded):
+        # Initialize storage for results
+        out_matrix = np.zeros((S, len(X_test)))
+
+        # Generate weight samples
+        weight_samples = []
+        for i in range(S):
+            samples = self.weight_sampler()
+            weight_samples.append(samples)
+
+        # Recreate new net
+        for s, weight_param in enumerate(weight_samples):
+            model_params = params_1d_to_weights(weight_param, self.shape_lookup, self.len_lookup)
+            new_net = create_NN_with_weights(self.NN_class, model_params)
+            output = new_net.forward(X_test)
+            out_matrix[s] = output.detach().numpy().flatten()
+
+        # Return outputs
+        return out_matrix
