@@ -160,12 +160,14 @@ class SWAG:
             second_mom = self.params_1d**2
 
         # Train nn for train_epoch
-        print("Begin NN model training...")
+        if verbose:
+            print("Begin NN model training...")
         for i in range(train_epoch):
             self.net_step(i, log_freq, verbose, train_mode=True)
 
         # Perform SWAG inference
-        print("\nBegin SWAG training...")
+        if verbose:
+            print("\nBegin SWAG training...")
         for i in range(swag_epoch):
             # Activate scheduler
             self.swa_scheduler = self.swa_scheduler_cls(self.optimizer,

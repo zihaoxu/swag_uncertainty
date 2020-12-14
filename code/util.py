@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import numpy as np
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import mean_squared_error
 
 
 def model_param_to_1D(net: nn.Module):
@@ -128,3 +130,115 @@ def uncertainty_measurement(X_test, expand_pred):
     print("\nBegin uncertainty assessment...")
     for x, var in zip(X_test, var_list):
         print(f"Test point: {x} \tVariance in prediction: {var:.4f}")
+        
+def uncertainty_estimation(swag, X_test, pred,  X_valid, y_valid, ensemble = False, verbose = True):
+    ''' Measures model uncertainty in as the variance in SWAG model predictions (for regression tasks) 
+        Params:
+            swag: SWAG model to be evaluated
+            X_test: test points
+            pred: swag predictions on the test points; dx1 array where d is the number of SWAG models
+            X_valid: valid points
+            y_valid: true valid y values
+            ensemble: whether or not it is an ensemble of SWAG models
+    '''
+    var_list = []
+    mean_list = []
+    up_list = []
+    low_list = []
+    for i in range(len(X_test)):
+        preds_i = pred[:, i]
+        var_list.append(np.var(preds_i))
+        mean_list.append(np.mean(preds_i,axis=0))
+        up_list.append(np.percentile(preds_i, 2.5, axis=0))
+        low_list.append(np.percentile(preds_i, 97.5, axis=0))
+
+    if verbose:
+        print("\nBegin uncertainty assessment...")
+        if ensemble:
+            ensemble_mse = []
+            for s in swag:
+                agg_mse = []
+                X_valid_tensor = torch.as_tensor([X_valid]).reshape((-1,1))
+                train_pred = s.predict(X_valid_tensor.float(),None, S=200, expanded=True)
+                for i in range(train_pred.shape[0]):
+                    agg_mse.append(mean_squared_error(y_valid,train_pred[i,:]))
+                mse = np.mean(agg_mse,axis=0)
+                ensemble_mse.append(mse)
+            print('Valid MSE: ', np.mean(ensemble_mse))
+            return mean_list, up_list, low_list, np.mean(ensemble_mse)
+        else:
+            agg_mse = []
+            X_valid_tensor = torch.as_tensor([X_valid]).reshape((-1,1))
+            train_pred = swag.predict(X_valid_tensor.float(),None, S=200, expanded=True)
+            for i in range(train_pred.shape[0]):
+                agg_mse.append(mean_squared_error(y_valid,train_pred[i,:]))
+            mse = np.mean(agg_mse,axis=0)
+            print('Valid MSE: ', mse)
+            return mean_list, up_list, low_list, mse
+        
+    return mean_list, up_list, low_list, False
+
+class SGD:
+    def __init__(self, NN_class, **kwargs):
+        # Neural Network related params
+        self.NN_class = NN_class
+        self.net = NN_class(**kwargs)
+        self.params_1d, self.shape_lookup, self.len_lookup = model_param_to_1D(self.net)
+        self.weigt_D = len(self.params_1d)
+        self.optimizer = optim.SGD(self.net.parameters(), 1e-3, 0.9)
+        self.loss_fn = nn.MSELoss()
+        self.loss_list = []
+    
+    def fit(self, train_loader, train_epoch: int,log_freq: int = 2000,verbose: bool = True):
+        self.train_loader = train_loader
+        for i in range(train_epoch):
+            self.weights_param,loss = self.net_step(i, log_freq, verbose, return_weights=True)
+            self.loss_list.append(loss)
+        return self.weights_param
+    
+    def net_step(self,
+                 epoch: int,
+                 log_freq: int,
+                 verbose: bool,
+                 return_weights: bool = False):
+        
+        if not self.optimizer:
+            raise RuntimeError("Please compile the model before training.")
+
+        # Store and print running_loss
+        running_loss = 0.0
+        losses = []
+        for i, data in enumerate(self.train_loader, 0):
+            
+            X_train, y_train = data
+            
+            if len(y_train.shape) > 1:
+                y_train = y_train.view(-1)
+            
+            self.optimizer.zero_grad()
+            
+            loss = self.loss_fn(self.net(X_train), y_train)
+            
+            loss.backward()
+            
+            self.optimizer.step()
+
+            # print statistics
+            running_loss += loss.item()
+            if verbose and i % log_freq == log_freq-1:
+                print('[Epoch: %d, \tIteration: %5d] \tTraining Loss: %.4f' %
+                      (epoch + 1, i + 1, running_loss / log_freq))
+                losses.append(running_loss/log_freq)
+                running_loss = 0.0
+            
+
+        # If return_weights
+        if return_weights:
+            new_weights, _, _ = model_param_to_1D(self.net)
+            return new_weights,np.mean(losses)
+        
+    def predict(self, X_test):
+        model_params = params_1d_to_weights(self.weights_param, self.shape_lookup, self.len_lookup)
+        new_net = create_NN_with_weights(self.NN_class, model_params)
+        output = new_net.forward(X_test)
+        return output
