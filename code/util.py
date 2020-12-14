@@ -230,6 +230,10 @@ class SGD:
                       (epoch + 1, i + 1, running_loss / log_freq))
                 losses.append(running_loss/log_freq)
                 running_loss = 0.0
+                
+            if not verbose:
+                losses.append(running_loss/log_freq)
+                running_loss = 0.0
             
 
         # If return_weights
