@@ -124,6 +124,22 @@ class SWAG:
         self.swa_const_lr = lambda x: swa_const_lr
         self.swa_scheduler_cls = swa_scheduler
 
+    def compile_customize_optimizer(self,
+                objective: str,
+                swa_const_lr: float,
+                optimizer: torch.optim.Optimizer,
+                loss_fn: torch.nn.modules.loss._Loss,
+                swa_scheduler):
+        ''' Compiles the model
+        '''
+        if objective not in ['regression', 'classification']:
+            raise ValueError("objective must be one of 'regression' or 'classification'.")
+        self.objective = objective
+        self.optimizer = optimizer(self.net.parameters())
+        self.loss_fn = loss_fn
+        self.swa_const_lr = lambda x: swa_const_lr
+        self.swa_scheduler_cls = swa_scheduler
+        
     def fit(self,
             train_loader,
             train_epoch: int,
