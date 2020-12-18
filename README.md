@@ -10,7 +10,7 @@ Ruoxi Yang, ryang@g.harvard.edu
 ---
 
 ## Directory setup
-**`code/`: folder for python scripts**
+**`code/`**: folder for python scripts
 - `cifar_util.py`: utility function for the `cifar_10` classification experiment
 - `data_gen.py`: contains Dataset classes in pytorch used in experiments
 - `models.py`: contains several NN models written in pytorch used in experiments
